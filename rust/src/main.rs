@@ -87,7 +87,7 @@ struct MempoolFees {
 fn create_or_load_wallet(rpc: &Client, wallet_name: &str) -> bitcoincore_rpc::Result<()> {
     // First check if wallet already exists in the loaded wallets
     let loaded_wallets: ListWalletsResult = rpc.call("listwallets", &[])?;
-    
+
     if loaded_wallets.0.contains(&wallet_name.to_string()) {
         println!("Wallet '{}' is already loaded", wallet_name);
         return Ok(());
@@ -95,7 +95,7 @@ fn create_or_load_wallet(rpc: &Client, wallet_name: &str) -> bitcoincore_rpc::Re
 
     // Try to create the wallet, if it fails due to existing wallet, try to load it
     let create_result = rpc.call::<CreateWalletResult>("createwallet", &[json!(wallet_name)]);
-    
+
     match create_result {
         Ok(_) => {
             println!("Created wallet '{}'", wallet_name);
@@ -135,7 +135,10 @@ fn main() -> bitcoincore_rpc::Result<()> {
 
     // Get blockchain info
     let blockchain_info = rpc.get_blockchain_info()?;
-    println!("Blockchain Info: Chain: {}, Blocks: {}", blockchain_info.chain, blockchain_info.blocks);
+    println!(
+        "Blockchain Info: Chain: {}, Blocks: {}",
+        blockchain_info.chain, blockchain_info.blocks
+    );
 
     // Create/Load the wallets, named 'Miner' and 'Trader'
     create_or_load_wallet(&rpc, "Miner")?;
@@ -154,32 +157,27 @@ fn main() -> bitcoincore_rpc::Result<()> {
     // In regtest, coinbase transactions need to mature (100 confirmations) before they can be spent
     let mut blocks_mined = 0;
     let mut balance = Amount::ZERO;
-    
+
     println!("Mining blocks to generate spendable balance...");
     while balance == Amount::ZERO {
         // Mine 1 block at a time and check balance
         let _block_hashes = rpc.generate_to_address(1, &mining_address)?;
         blocks_mined += 1;
         balance = miner_rpc.get_balance(None, None)?;
-        
+
         if blocks_mined % 10 == 0 {
-            println!("Mined {} blocks, balance: {} BTC", blocks_mined, balance.to_btc());
+            println!(
+                "Mined {} blocks, balance: {} BTC",
+                blocks_mined,
+                balance.to_btc()
+            );
         }
-        
+
         // Safety check to avoid infinite loop
         if blocks_mined > 150 {
             break;
         }
     }
-
-    /*
-     * Comment on wallet balance behavior:
-     * In Bitcoin, block rewards (coinbase transactions) have a maturity period of 100 blocks
-     * before they can be spent. This is a consensus rule to prevent issues with chain 
-     * reorganizations. That's why we need to mine at least 101 blocks to see a positive
-     * spendable balance - the first block's reward becomes spendable after 100 more blocks
-     * are mined on top of it.
-     */
 
     println!("Mined {} blocks to achieve positive balance", blocks_mined);
     println!("Miner wallet balance: {} BTC", balance.to_btc());
@@ -191,20 +189,35 @@ fn main() -> bitcoincore_rpc::Result<()> {
 
     // Send 20 BTC from Miner wallet to Trader's wallet
     let send_amount = Amount::from_btc(20.0).unwrap();
-    let txid = miner_rpc.send_to_address(&trader_address, send_amount, None, None, None, None, None, None)?;
+    let txid = miner_rpc.send_to_address(
+        &trader_address,
+        send_amount,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )?;
     println!("Sent transaction ID: {}", txid);
 
     // Fetch the unconfirmed transaction from the node's mempool
     let mempool_entry: MempoolEntry = rpc.call("getmempoolentry", &[json!(txid.to_string())])?;
-    println!("Transaction found in mempool with fee: {} BTC", mempool_entry.fees.base);
+    println!(
+        "Transaction found in mempool with fee: {} BTC",
+        mempool_entry.fees.base
+    );
 
     // Mine 1 block to confirm the transaction
     let _confirm_blocks = rpc.generate_to_address(1, &mining_address)?;
     println!("Mined 1 block to confirm transaction");
 
     // Get detailed transaction information
-    let tx_info: GetTransactionResult = miner_rpc.call("gettransaction", &[json!(txid.to_string()), json!(null), json!(true)])?;
-    
+    let tx_info: GetTransactionResult = miner_rpc.call(
+        "gettransaction",
+        &[json!(txid.to_string()), json!(null), json!(true)],
+    )?;
+
     // Extract basic transaction details
     let tx_fee = tx_info.fee.unwrap_or(0.0);
     let block_height = tx_info.blockheight.unwrap();
@@ -213,56 +226,82 @@ fn main() -> bitcoincore_rpc::Result<()> {
     // Parse the transaction inputs - get the input address and amount
     let vin = &tx_info.decoded.vin[0];
     let miner_input_amount = vin.prevout.as_ref().unwrap().value;
-    let miner_input_address = vin.prevout.as_ref().unwrap().script_pub_key.address.as_ref().unwrap();
+    let miner_input_address = vin
+        .prevout
+        .as_ref()
+        .unwrap()
+        .script_pub_key
+        .address
+        .as_ref()
+        .unwrap();
 
     // Parse outputs to get exact addresses and amounts
     // Find the output that goes to the trader (should be exactly 20 BTC)
-    let trader_output = tx_info.decoded.vout.iter().find(|vout| {
-        if let Some(addr) = &vout.script_pub_key.address {
-            addr == &trader_address.to_string()
-        } else {
-            false
-        }
-    }).expect("Trader output not found");
-    
+    let trader_output = tx_info
+        .decoded
+        .vout
+        .iter()
+        .find(|vout| {
+            if let Some(addr) = &vout.script_pub_key.address {
+                addr == &trader_address.to_string()
+            } else {
+                false
+            }
+        })
+        .expect("Trader output not found");
+
     // Find the change output (the other output)
-    let miner_change_output = tx_info.decoded.vout.iter().find(|vout| {
-        if let Some(addr) = &vout.script_pub_key.address {
-            addr != &trader_address.to_string()
-        } else {
-            false
-        }
-    }).expect("Miner change output not found");
+    let miner_change_output = tx_info
+        .decoded
+        .vout
+        .iter()
+        .find(|vout| {
+            if let Some(addr) = &vout.script_pub_key.address {
+                addr != &trader_address.to_string()
+            } else {
+                false
+            }
+        })
+        .expect("Miner change output not found");
 
     let miner_change_address = miner_change_output.script_pub_key.address.as_ref().unwrap();
-    
+
     // Prepare output data
     let trader_output_address = &trader_address.to_string();
     let trader_output_amount = trader_output.value;
     let miner_change_amount = miner_change_output.value;
-    
+
     // Make sure fee is positive for output
     let fee_amount = if tx_fee < 0.0 { -tx_fee } else { tx_fee };
 
     // Write the data to out.txt in the specified format
     let mut file = File::create("out.txt")?;
-    writeln!(file, "{}", txid)?;                           // Transaction ID (txid)
-    writeln!(file, "{}", miner_input_address)?;            // Miner's Input Address
-    writeln!(file, "{}", miner_input_amount)?;             // Miner's Input Amount (in BTC)
-    writeln!(file, "{}", trader_output_address)?;          // Trader's Output Address
-    writeln!(file, "{}", trader_output_amount)?;           // Trader's Output Amount (in BTC)
-    writeln!(file, "{}", miner_change_address)?;           // Miner's Change Address
-    writeln!(file, "{}", miner_change_amount)?;            // Miner's Change Amount (in BTC)
-    writeln!(file, "{}", fee_amount)?;                     // Transaction Fees (in BTC)
-    writeln!(file, "{}", block_height)?;                   // Block height at which the transaction is confirmed
-    writeln!(file, "{}", block_hash)?;                     // Block hash at which the transaction is confirmed
+    writeln!(file, "{}", txid)?; // Transaction ID (txid)
+    writeln!(file, "{}", miner_input_address)?; // Miner's Input Address
+    writeln!(file, "{}", miner_input_amount)?; // Miner's Input Amount (in BTC)
+    writeln!(file, "{}", trader_output_address)?; // Trader's Output Address
+    writeln!(file, "{}", trader_output_amount)?; // Trader's Output Amount (in BTC)
+    writeln!(file, "{}", miner_change_address)?; // Miner's Change Address
+    writeln!(file, "{}", miner_change_amount)?; // Miner's Change Amount (in BTC)
+    writeln!(file, "{}", fee_amount)?; // Transaction Fees (in BTC)
+    writeln!(file, "{}", block_height)?; // Block height at which the transaction is confirmed
+    writeln!(file, "{}", block_hash)?; // Block hash at which the transaction is confirmed
 
     println!("Transaction details written to out.txt");
     println!("Summary:");
     println!("  TXID: {}", txid);
-    println!("  Miner Input: {} BTC from {}", miner_input_amount, miner_input_address);
-    println!("  Trader Output: {} BTC to {}", trader_output_amount, trader_output_address);
-    println!("  Miner Change: {} BTC to {}", miner_change_amount, miner_change_address);
+    println!(
+        "  Miner Input: {} BTC from {}",
+        miner_input_amount, miner_input_address
+    );
+    println!(
+        "  Trader Output: {} BTC to {}",
+        trader_output_amount, trader_output_address
+    );
+    println!(
+        "  Miner Change: {} BTC to {}",
+        miner_change_amount, miner_change_address
+    );
     println!("  Fee: {} BTC", fee_amount);
     println!("  Block Height: {}", block_height);
     println!("  Block Hash: {}", block_hash);
