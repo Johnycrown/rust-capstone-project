@@ -1,6 +1,6 @@
 #![allow(unused)]
 use bitcoin::hex::DisplayHex;
-use bitcoincore_rpc::bitcoin::Amount;
+use bitcoincore_rpc::bitcoin::{Amount, Network};
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -146,7 +146,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let trader_rpc = get_wallet_client("Trader")?;
 
     // Generate one address from the Miner wallet with label "Mining Reward"
-    let mining_address = miner_rpc.get_new_address(Some("Mining Reward"), None)?;
+    let mining_address_unchecked = miner_rpc.get_new_address(Some("Mining Reward"), None)?;
+    let mining_address = mining_address_unchecked.assume_checked();
     println!("Mining address: {}", mining_address);
 
     // Mine blocks until we get a positive balance
@@ -184,7 +185,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
     println!("Miner wallet balance: {} BTC", balance.to_btc());
 
     // Create a receiving address labeled "Received" from Trader wallet
-    let trader_address = trader_rpc.get_new_address(Some("Received"), None)?;
+    let trader_address_unchecked = trader_rpc.get_new_address(Some("Received"), None)?;
+    let trader_address = trader_address_unchecked.assume_checked();
     println!("Trader receiving address: {}", trader_address);
 
     // Send 20 BTC from Miner wallet to Trader's wallet
